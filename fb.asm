@@ -1,11 +1,16 @@
 $MODDE0CV
 
+AUX_TIMER_RELOAD EQU 42
+
 CSEG at 0000H
 ljmp main
 
 CSEG at 000BH
 inc next_num
 reti
+
+CSEG at 001BH
+ljmp timer1_isr
 
 CSEG at 0100H
 DB	'Hexadecimal game for the CV-8052 by James Wu.'
@@ -16,13 +21,38 @@ DSEG at 30H
 score:		DS 2 ; low digit + high digit
 num:		DS 1 ; random number for user to match
 next_num:	DS 1 ; next random number, randomized with time
+aux_timer:	DS 1 ; auxiliary timer for timer 1 countdown to add more bits
 
 CSEG at 0200H
 hex_to_7seg:
 DB 0C0H, 0F9H, 0A4H, 0B0H, 99H, 92H, 82H, 0F8H, 80H, 90H
-DB 0A0H, 83H, 0C6H, 0A1H, 086H, 08EH
+DB 88H, 83H, 0C6H, 0A1H, 086H, 08EH
 
 CSEG at 1000H
+
+timer1_isr:
+
+	djnz aux_timer, timer1_isr_ret
+	mov aux_timer, #AUX_TIMER_RELOAD ; ~1s
+	
+	lcall countdown
+	
+timer1_isr_ret:
+	reti
+
+countdown:
+
+	clr C
+
+	xch A, SWB
+	rrc A
+	xch A, SWB
+
+	xch A, SWA
+	rrc A
+	xch A, SWA
+
+	ret
 
 main:
 
@@ -55,20 +85,20 @@ init:
 	mov HEX0, #0BFH
 	mov HEX1, #0BFH
 	
-	; Enable Timer 0 in Mode 2
+	; Enable Timer 0 in Mode 2 + Timer 1 in Mode 1
 	setb EA
 	setb ET0
-	mov TMOD, #02H
+	setb ET1
+	mov TMOD, #12H
 	mov TH0, #0E0H ; Timer 0 to overflow every ~11.5 us
 	setb TR0
+	setb TR1
 	
 	; Wait for KEY.0 press + release
 	jb KEY.0, $
 	jnb KEY.0, $
 	
-	mov num, next_num
-	
-	lcall randomize
+	lcall refresh
 
 	ret
 
@@ -93,11 +123,12 @@ update_score:
 	cjne a, num, get_score_ret
 	
 	lcall inc_score
-	mov num, next_num
+	lcall refresh
 
 get_score_ret:
 	ret
 
+; Increments the decimal score
 inc_score:
 
 	inc score+0
@@ -112,6 +143,20 @@ inc_score:
 	mov score+1, #0
 
 inc_score_ret:
+	ret
+
+; Refreshes appropriate registers for next round
+refresh:
+
+	mov aux_timer, #AUX_TIMER_RELOAD
+
+	mov SWB, #03H
+	mov SWA, #0FFH
+
+	mov num, next_num
+	
+	lcall randomize
+	
 	ret
 
 display:
