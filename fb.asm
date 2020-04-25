@@ -93,6 +93,7 @@ update_score:
 	cjne a, num, get_score_ret
 	
 	lcall inc_score
+	mov num, next_num
 
 get_score_ret:
 	ret
